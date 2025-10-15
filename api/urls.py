@@ -11,10 +11,10 @@ router.register("subcategories", SubCategoryViewSet, basename="subcategory")
 router.register("interests", UserInterestViewSet, basename="interest")
 
 """ Post Section """
-router.register('posts', PostViewSet, basename='post')
-router.register('likes', LikeViewSet, basename='like')
-router.register('comments', CommentViewSet, basename='comment')
-router.register('shares', ShareViewSet, basename='share')
+router.register(r'posts', PostViewSet, basename='post')
+router.register(r'likes', LikeViewSet, basename='like')
+router.register(r'comments', CommentViewSet, basename='comment')
+router.register(r'shares', ShareViewSet, basename='share')
 
 urlpatterns = [
     path("", include(router.urls)),

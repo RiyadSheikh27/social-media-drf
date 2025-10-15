@@ -1,13 +1,20 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, permissions
+from rest_framework import viewsets, permissions, status
 from django.core.mail import send_mail
 from django.conf import settings
 import random
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User
+from .permissions import IsOwnerOrReadOnly
+from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
+from rest_framework.exceptions import PermissionDenied, NotFound
+from rest_framework.decorators import action
+from .models import *
 from .serializers import *
+from post.models import *
+from post.serializers import *
 from .utils import verify_google_token, verify_apple_token
 
 
@@ -215,3 +222,119 @@ class OAuthLoginView(APIView):
                 "provider": provider
             }
         }, status=200)
+    
+""" User Profile Section """
+class ProfileViewSet(viewsets.ModelViewSet):
+    queryset = Profile.objects.all()
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
+
+    def get_serializer_class(self):
+        """Use different serializers for read and write operations"""
+        if self.action in ['update', 'partial_update']:
+            return ProfileUpdateSerializer
+        return ProfileSerializer
+
+    def get_queryset(self):
+        """Return all profiles for list view"""
+        return Profile.objects.select_related('user').all().order_by('-created_at')
+
+    def create(self, request, *args, **kwargs):
+        """
+        Prevent manual profile creation - profiles are auto-created with user.
+        """
+        return Response(
+            {"detail": "Profiles are automatically created with user accounts. Use PUT/PATCH to update your profile."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    def update(self, request, *args, **kwargs):
+        """Only the profile owner can update their profile."""
+        profile = self.get_object()
+        
+        if profile.user != request.user:
+            raise PermissionDenied("You do not have permission to edit this profile.")
+        
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        """Only the profile owner can partially update their profile."""
+        profile = self.get_object()
+        
+        if profile.user != request.user:
+            raise PermissionDenied("You do not have permission to edit this profile.")
+        
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Prevent profile deletion - profiles should exist as long as user exists.
+        If you want to delete profile, delete the user account instead.
+        """
+        return Response(
+            {"detail": "Profiles cannot be deleted directly. Delete the user account to remove the profile."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        """Get the current user's profile"""
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        profile = get_object_or_404(Profile, user=request.user)
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['put', 'patch'])
+    def update_me(self, request):
+        """Update the current user's profile"""
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        profile = get_object_or_404(Profile, user=request.user)
+        serializer = ProfileUpdateSerializer(
+            profile, 
+            data=request.data, 
+            partial=request.method == 'PATCH',
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            serializer.save()
+            # Return full profile data
+            response_serializer = ProfileSerializer(profile, context={'request': request})
+            return Response(response_serializer.data)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    @action(detail=False, methods=['get'])
+    def search(self, request):
+        """Search profiles by username or display name"""
+        query = request.query_params.get('q', '')
+        
+        if not query:
+            return Response(
+                {"detail": "Please provide a search query using ?q=searchterm"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        profiles = Profile.objects.filter(
+            models.Q(user__username__icontains=query) |
+            models.Q(display_name__icontains=query)
+        ).select_related('user').order_by('-created_at')
+        
+        page = self.paginate_queryset(profiles)
+        
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(profiles, many=True)
+        return Response(serializer.data)
