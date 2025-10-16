@@ -14,7 +14,6 @@ class LikeSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         post = validated_data['post']
         
-        # Validate post is approved
         if post.status != 'approved':
             raise serializers.ValidationError("You can only like approved posts.")
         
@@ -27,7 +26,6 @@ class RecursiveSerializer(serializers.Serializer):
     def to_representation(self, instance):
         serializer = self.parent.parent.__class__(instance, context=self.context)
         return serializer.data
-
 
 class CommentSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)

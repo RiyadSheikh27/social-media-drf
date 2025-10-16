@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.apple',
 
     'ckeditor',
+    'drf_yasg',
 
     'accounts',
     'api',
