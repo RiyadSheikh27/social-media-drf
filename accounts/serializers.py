@@ -50,12 +50,19 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
+# class OAuthRegisterSerializer(serializers.Serializer):
+#     email = serializers.EmailField()
+#     provider = serializers.ChoiceField(choices=['google', 'apple'])
+
+# class OAuthLoginSerializer(serializers.Serializer):
+#     email = serializers.EmailField()
+#     provider = serializers.ChoiceField(choices=['google', 'apple'])
 class OAuthRegisterSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    access_token = serializers.CharField()
     provider = serializers.ChoiceField(choices=['google', 'apple'])
 
 class OAuthLoginSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    access_token = serializers.CharField()
     provider = serializers.ChoiceField(choices=['google', 'apple'])
 
 """ Profile Section """

@@ -11,6 +11,8 @@ urlpatterns = [
     path('verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
     path('set-credentials/', SetCredentialsView.as_view(), name='set-credentials'),
     path('login/', LoginView.as_view(), name='login'),
+    # path('oauth/register/', OAuthRegisterView.as_view(), name='oauth-register'),
+    # path('oauth/login/', OAuthLoginView.as_view(), name='oauth-login'),
     path('oauth/register/', OAuthRegisterView.as_view(), name='oauth-register'),
     path('oauth/login/', OAuthLoginView.as_view(), name='oauth-login'),
 ]

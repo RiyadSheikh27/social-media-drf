@@ -15,7 +15,17 @@ from .models import *
 from .serializers import *
 from post.models import *
 from post.serializers import *
-from .utils import verify_google_token, verify_apple_token
+from .utils import *
+import logging
+
+logger = logging.getLogger(__name__)
+
+from .utils import (
+    verify_google_access_token, 
+    verify_apple_access_token,
+    get_google_user_info,
+    get_apple_user_info
+)
 
 
 """Generate JWT tokens"""
@@ -149,79 +159,79 @@ class LoginView(APIView):
         return Response({"message": "Login successful", "tokens": tokens_for_user(user)}, status=200)
 
 
-"""OAuth Register View"""
-class OAuthRegisterView(APIView):
-    permission_classes = [permissions.AllowAny]
+# """OAuth Register View"""
+# class OAuthRegisterView(APIView):
+#     permission_classes = [permissions.AllowAny]
 
-    def post(self, request):
-        id_token_str = request.data.get('id_token')
-        provider = request.data.get('provider')
-        if not id_token_str or not provider:
-            return Response({"error": "id_token and provider are required"}, status=400)
+#     def post(self, request):
+#         id_token_str = request.data.get('id_token')
+#         provider = request.data.get('provider')
+#         if not id_token_str or not provider:
+#             return Response({"error": "id_token and provider are required"}, status=400)
 
-        if provider.lower() == 'google':
-            email = verify_google_token(id_token_str)
-        elif provider.lower() == 'apple':
-            email = verify_apple_token(id_token_str)
-        else:
-            return Response({"error": "Unsupported provider"}, status=400)
+#         if provider.lower() == 'google':
+#             email = verify_google_token(id_token_str)
+#         elif provider.lower() == 'apple':
+#             email = verify_apple_token(id_token_str)
+#         else:
+#             return Response({"error": "Unsupported provider"}, status=400)
 
-        if not email:
-            return Response({"error": "Invalid OAuth token"}, status=400)
+#         if not email:
+#             return Response({"error": "Invalid OAuth token"}, status=400)
 
-        user, created = User.objects.get_or_create(
-            email=email.lower(),
-            defaults={
-                'username': email.split('@')[0],
-                'email_verified': True,
-                'is_oauth_user': True,
-                'username_set': True
-            }
-        )
+#         user, created = User.objects.get_or_create(
+#             email=email.lower(),
+#             defaults={
+#                 'username': email.split('@')[0],
+#                 'email_verified': True,
+#                 'is_oauth_user': True,
+#                 'username_set': True
+#             }
+#         )
 
-        if not created:
-            return Response({"message": "User already registered."}, status=200)
+#         if not created:
+#             return Response({"message": "User already registered."}, status=200)
 
-        return Response({"message": f"User registered via {provider.title()} successfully."}, status=201)
+#         return Response({"message": f"User registered via {provider.title()} successfully."}, status=201)
 
-"""Oauth Login View"""
-class OAuthLoginView(APIView):
-    permission_classes = [permissions.AllowAny]
+# """Oauth Login View"""
+# class OAuthLoginView(APIView):
+#     permission_classes = [permissions.AllowAny]
 
-    def post(self, request):
-        id_token_str = request.data.get('id_token')
-        provider = request.data.get('provider')
-        if not id_token_str or not provider:
-            return Response({"error": "id_token and provider are required"}, status=400)
+#     def post(self, request):
+#         id_token_str = request.data.get('id_token')
+#         provider = request.data.get('provider')
+#         if not id_token_str or not provider:
+#             return Response({"error": "id_token and provider are required"}, status=400)
 
-        if provider.lower() == 'google':
-            email = verify_google_token(id_token_str)
-        elif provider.lower() == 'apple':
-            email = verify_apple_token(id_token_str)
-        else:
-            return Response({"error": "Unsupported provider"}, status=400)
+#         if provider.lower() == 'google':
+#             email = verify_google_token(id_token_str)
+#         elif provider.lower() == 'apple':
+#             email = verify_apple_token(id_token_str)
+#         else:
+#             return Response({"error": "Unsupported provider"}, status=400)
 
-        if not email:
-            return Response({"error": "Invalid OAuth token"}, status=400)
+#         if not email:
+#             return Response({"error": "Invalid OAuth token"}, status=400)
 
-        try:
-            user = User.objects.get(email=email.lower())
-        except User.DoesNotExist:
-            return Response({"error": "User not registered"}, status=404)
+#         try:
+#             user = User.objects.get(email=email.lower())
+#         except User.DoesNotExist:
+#             return Response({"error": "User not registered"}, status=404)
 
-        if not user.is_oauth_user:
-            return Response({"error": "This user is not registered via OAuth"}, status=403)
+#         if not user.is_oauth_user:
+#             return Response({"error": "This user is not registered via OAuth"}, status=403)
 
-        tokens = tokens_for_user(user)
-        return Response({
-            "message": f"Logged in via {provider.title()} successfully",
-            "tokens": tokens,
-            "user": {
-                "email": user.email,
-                "username": user.username,
-                "provider": provider
-            }
-        }, status=200)
+#         tokens = tokens_for_user(user)
+#         return Response({
+#             "message": f"Logged in via {provider.title()} successfully",
+#             "tokens": tokens,
+#             "user": {
+#                 "email": user.email,
+#                 "username": user.username,
+#                 "provider": provider
+#             }
+#         }, status=200)
     
 """ User Profile Section """
 class ProfileViewSet(viewsets.ModelViewSet):
@@ -339,4 +349,233 @@ class ProfileViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(profiles, many=True)
         return Response(serializer.data)
     
-    # Hello world
+
+"""OAuth Register View - Using Access Token"""
+class OAuthRegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        # Log incoming request data for debugging
+        logger.info(f"OAuth Register Request Data: {request.data}")
+        
+        serializer = OAuthRegisterSerializer(data=request.data)
+        if not serializer.is_valid():
+            logger.error(f"Serializer Validation Error: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        access_token = serializer.validated_data['access_token']
+        provider = serializer.validated_data['provider'].lower()
+
+        logger.info(f"Provider: {provider}")
+
+        # Verify access token and get user email based on provider
+        email = None
+        user_info = None
+
+        try:
+            if provider == 'google':
+                # For Google: Use userinfo endpoint (PRIMARY METHOD)
+                user_info = get_google_user_info(access_token)
+                if user_info:
+                    email = user_info.get('email')
+                    logger.info(f"Google user info retrieved: {user_info}")
+                else:
+                    # Fallback: Try tokeninfo endpoint
+                    email = verify_google_access_token(access_token)
+                    logger.info(f"Google tokeninfo result: {email}")
+
+            elif provider == 'apple':
+                # For Apple: Verify JWT token
+                email = verify_apple_access_token(access_token)
+                logger.info(f"Apple token verification result: {email}")
+                
+                # Fallback: Get user info without verification
+                if not email:
+                    user_info = get_apple_user_info(access_token)
+                    if user_info:
+                        email = user_info.get('email')
+                        logger.info(f"Apple user info: {user_info}")
+            else:
+                return Response(
+                    {"error": "Unsupported provider. Use 'google' or 'apple'."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not email:
+                logger.error(f"Failed to get email from {provider} token")
+                return Response(
+                    {
+                        "error": f"Invalid {provider} access token or unable to retrieve user information.",
+                        "details": "Please ensure the token is valid and has not expired."
+                    }, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Generate username from email (part before @)
+            base_username = email.split('@')[0].lower()
+            # Remove special characters from username
+            base_username = ''.join(c if c.isalnum() or c in ['_', '.'] else '_' for c in base_username)
+            username = base_username
+
+            # Check if user already exists
+            try:
+                existing_user = User.objects.get(email=email)
+                logger.info(f"User already exists: {email}")
+                return Response(
+                    {
+                        "message": "User already registered with this email.",
+                        "email": email,
+                        "username": existing_user.username,
+                        "provider": provider
+                    }, 
+                    status=status.HTTP_200_OK
+                )
+            except User.DoesNotExist:
+                pass
+
+            # Ensure username is unique
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}{counter}"
+                counter += 1
+
+            # Create new user
+            user = User.objects.create(
+                email=email,
+                username=username,
+                email_verified=True,
+                is_oauth_user=True,
+                username_set=True
+            )
+
+            # Set unusable password for OAuth users
+            user.set_unusable_password()
+            user.save()
+
+            logger.info(f"User created successfully: {email}")
+
+            return Response(
+                {
+                    "message": f"User registered successfully via {provider.title()}.",
+                    "email": email,
+                    "username": username,
+                    "provider": provider
+                }, 
+                status=status.HTTP_201_CREATED
+            )
+
+        except Exception as e:
+            logger.error(f"OAuth Register Error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": f"An error occurred during registration: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+"""OAuth Login View - Using Access Token"""
+class OAuthLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        # Log incoming request data for debugging
+        logger.info(f"OAuth Login Request Data: {request.data}")
+        
+        serializer = OAuthLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            logger.error(f"Serializer Validation Error: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        access_token = serializer.validated_data['access_token']
+        provider = serializer.validated_data['provider'].lower()
+
+        logger.info(f"Provider: {provider}")
+
+        # Verify access token and get user email based on provider
+        email = None
+        user_info = None
+
+        try:
+            if provider == 'google':
+                # For Google: Use userinfo endpoint (PRIMARY METHOD)
+                user_info = get_google_user_info(access_token)
+                if user_info:
+                    email = user_info.get('email')
+                    logger.info(f"Google user info retrieved: {user_info}")
+                else:
+                    # Fallback: Try tokeninfo endpoint
+                    email = verify_google_access_token(access_token)
+                    logger.info(f"Google tokeninfo result: {email}")
+
+            elif provider == 'apple':
+                # For Apple: Verify JWT token
+                email = verify_apple_access_token(access_token)
+                logger.info(f"Apple token verification result: {email}")
+                
+                # Fallback: Get user info without verification
+                if not email:
+                    user_info = get_apple_user_info(access_token)
+                    if user_info:
+                        email = user_info.get('email')
+                        logger.info(f"Apple user info: {user_info}")
+            else:
+                return Response(
+                    {"error": "Unsupported provider. Use 'google' or 'apple'."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not email:
+                logger.error(f"Failed to get email from {provider} token")
+                return Response(
+                    {
+                        "error": f"Invalid {provider} access token or unable to retrieve user information.",
+                        "details": "Please ensure the token is valid and has not expired."
+                    }, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check if user exists
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                logger.error(f"User not found: {email}")
+                return Response(
+                    {
+                        "error": "User not registered. Please register first.",
+                        "email": email
+                    }, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Verify user is an OAuth user
+            if not user.is_oauth_user:
+                logger.error(f"User is not OAuth user: {email}")
+                return Response(
+                    {"error": "This account was not registered via OAuth. Please use email/password login."}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Generate tokens
+            tokens = tokens_for_user(user)
+
+            logger.info(f"User logged in successfully: {email}")
+
+            return Response(
+                {
+                    "message": f"Logged in successfully via {provider.title()}.",
+                    "tokens": tokens,
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "username": user.username,
+                        "provider": provider
+                    }
+                }, 
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            logger.error(f"OAuth Login Error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": f"An error occurred during login: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
