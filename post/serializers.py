@@ -25,7 +25,6 @@ class LikeSerializer(serializers.ModelSerializer):
                 notification_type='like',
                 post=post
             )
-        
         return like
         """ context is just a dictionary that can carry extra info to the serializer
         and request.user is provided by Django’s authentication system, 
