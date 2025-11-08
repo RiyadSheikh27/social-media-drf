@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from .models import *
 
-
 class LikeSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
     
@@ -18,7 +17,6 @@ class LikeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("You can only like approved posts.")
         
         like, created = Like.objects.get_or_create(user=user, post=post)
-        return like
     
         if created and post.user != user:
             Notification.objects.create(
@@ -29,7 +27,9 @@ class LikeSerializer(serializers.ModelSerializer):
             )
         
         return like
-        
+        """ context is just a dictionary that can carry extra info to the serializer
+        and request.user is provided by Django’s authentication system, 
+        means: give me the currently logged-in user making this request. """
 
 
 class RecursiveSerializer(serializers.Serializer):

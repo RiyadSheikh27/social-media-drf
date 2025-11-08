@@ -414,8 +414,6 @@ class FollowViewSet(viewsets.ModelViewSet):
         serializer = UserProfileSerializer(profile_data)
         return Response(serializer.data)
 
-
-# NEW ADDED - Notification ViewSet
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
