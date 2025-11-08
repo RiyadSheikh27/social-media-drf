@@ -53,7 +53,10 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.apple',
 
     'ckeditor',
+<<<<<<< HEAD
     'drf_yasg',
+=======
+>>>>>>> b4b2bed (first commit)
 
     'accounts',
     'api',
@@ -219,7 +222,10 @@ USE_TZ = True
 STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+<<<<<<< HEAD
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+=======
+>>>>>>> b4b2bed (first commit)
 
 CKEDITOR_UPLOAD_PATH = "uploads/" 
 
