@@ -53,10 +53,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.apple',
 
     'ckeditor',
-<<<<<<< HEAD
     'drf_yasg',
-=======
->>>>>>> b4b2bed (first commit)
 
     'accounts',
     'api',
@@ -82,7 +79,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=360),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 
@@ -222,10 +219,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-<<<<<<< HEAD
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-=======
->>>>>>> b4b2bed (first commit)
 
 CKEDITOR_UPLOAD_PATH = "uploads/" 
 

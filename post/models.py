@@ -31,14 +31,14 @@ class Post(models.Model):
         indexes = [
             models.Index(fields=['-created_at', 'status']),
             models.Index(fields=['user', '-created_at']),
-            """ speeds up queries like,
-             Post.objects.filter(status='approved').order_by('-created_at') """
         ]
-
+        # speeds up queries like,
+        # Post.objects.filter(status='approved').order_by('-created_at')
+        
     def likes_count(self):
         return self.likes.count()
-    """ Creates a reverse relationship from Post back to that model --> Like Model e 
-     related name hisebe like use kora ache """
+    # Creates a reverse relationship from Post back to that model --> Like Model e 
+    # related name hisebe like use kora ache
 
     def comments_count(self):
         return self.comments.count()
