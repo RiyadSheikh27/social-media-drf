@@ -8,6 +8,8 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import *
 from .serializers import *
+from django.core.files.storage import default_storage
+
 
 User = get_user_model()
 
@@ -15,6 +17,8 @@ class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all().order_by('-created_at')
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    # parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
         user = self.request.user

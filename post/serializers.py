@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from .models import *
+from django.core.files.storage import default_storage
+
 
 class LikeSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.username', read_only=True)
@@ -141,15 +143,38 @@ class PostSerializer(serializers.ModelSerializer):
     can_delete = serializers.SerializerMethodField()
     is_liked = serializers.SerializerMethodField()
 
+    media_files = serializers.ListField(max_lenth = 1000, allow_empty_file=False, use_url=True, write_only=True, required=False)
+
     class Meta:
         model = Post
         fields = [
-            'id', 'user', 'user_name', 'title', 'post_type', 'content', 'media_file', 'link',
+            'id', 'user', 'user_name', 'title', 'post_type', 'content', 'media_file', 'media_files', 'link',
             'tags', 'status', 'created_at', 'updated_at',
             'likes_count', 'comments_count', 'shares_count', 'comments',
             'can_edit', 'can_delete', 'is_liked'
         ]
         read_only_fields = ['user', 'likes_count', 'comments_count', 'shares_count', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        media_files = validated_data.pop('media_files', [])
+        post = Post.objects.create(**validated_data)
+
+        if media_files:
+            file_paths = []
+            for media_file in media_files:
+                file_path = default_storage.save(
+                    f'posts/{post.id}/{media_file.name}',
+                    media_file
+                )
+                file_paths.append(file_path)
+
+            post.media_file.set(file_paths)
+            post.save()
+            
+        return post
+
+
+    
 
     def get_comments(self, obj):
         top_level_comments = obj.comments.filter(parent=None)

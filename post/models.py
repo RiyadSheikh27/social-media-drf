@@ -20,7 +20,7 @@ class Post(models.Model):
     title = models.CharField(max_length=255)
     post_type = models.CharField(max_length=10, choices=POST_TYPE_CHOICES)
     content = RichTextField(blank=True, null=True)
-    media_file = models.FileField(upload_to='posts/media/', blank=True, null=True)
+    media_file = models.JSONField(default=list, blank=True, null=True)
     link = models.URLField(blank=True, null=True)
     tags = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='approved')

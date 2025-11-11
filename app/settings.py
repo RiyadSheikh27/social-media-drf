@@ -113,7 +113,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'riyad.cse27@gmail.com'
-EMAIL_HOST_PASSWORD = 'hecqnmdgidgfucct' 
+EMAIL_HOST_PASSWORD = 'qfwftukbgotbatnu' 
 
 AUTH_USER_MODEL = 'accounts.User'
 
