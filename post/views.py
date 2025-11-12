@@ -9,6 +9,8 @@ from datetime import timedelta
 from .models import *
 from .serializers import *
 from django.core.files.storage import default_storage
+from rest_framework import parsers
+
 
 
 User = get_user_model()
@@ -18,7 +20,7 @@ class PostViewSet(viewsets.ModelViewSet):
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    # parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
         user = self.request.user
@@ -32,33 +34,85 @@ class PostViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response({
+            "success": True,
+            "message": "Post created successfully",
+            "data": serializer.data
+        }, status=status.HTTP_201_CREATED, headers=headers)
+    
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Posts retrieved successfully",
+                "data": serializer.data
+            })
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "success": True,
+            "message": "Posts retrieved successfully",
+            "data": serializer.data
+        })
+
+    def retrieve(self, request, *args, **kwargs):
+        post = self.get_object()
+        PostView.objects.get_or_create(user=request.user, post=post)
+        serializer = self.get_serializer(post)
+        return Response({
+            "success": True,
+            "message": "Post retrieved successfully",
+            "data": serializer.data
+        })
+
     def update(self, request, *args, **kwargs):
         """Only the post owner can update their post."""
         post = self.get_object()
         if post.user != request.user:
             raise PermissionDenied("You do not have permission to edit this post.")
-        return super().update(request, *args, **kwargs)
+        partial = kwargs.pop('partial', False)
+        serializer = self.get_serializer(post, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response({
+            "success": True,
+            "message": "Post updated successfully",
+            "data": serializer.data
+        })
 
     def partial_update(self, request, *args, **kwargs):
         """Only the post owner can partially update their post."""
         post = self.get_object()
         if post.user != request.user:
             raise PermissionDenied("You do not have permission to edit this post.")
-        return super().partial_update(request, *args, **kwargs)
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         """Only the post owner can delete their post."""
         post = self.get_object()
         if post.user != request.user:
             raise PermissionDenied("You do not have permission to delete this post.")
-        return super().destroy(request, *args, **kwargs)
-    
-    def retrieve(self, request, *args, **kwargs):
-        post = self.get_object()
         
-        PostView.objects.get_or_create(user=request.user, post=post)
-        
-        return super().retrieve(request, *args, **kwargs)
+        if post.media_file:
+            for file_path in post.media_file:
+                if default_storage.exists(file_path):
+                    default_storage.delete(file_path)
+
+        self.perform_destroy(post)
+        return Response({
+            "success": True,
+            "message": "Post deleted successfully",
+            "data": None
+        }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['get'])
     def news_feed(self, request):
@@ -125,10 +179,18 @@ class PostViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(combined_posts)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "News feed retrieved successfully",
+                "data": serializer.data
+            })
         
         serializer = self.get_serializer(combined_posts, many=True)
-        return Response(serializer.data)
+        return Response({
+            "success": True,
+            "message": "News feed retrieved successfully",
+            "data": serializer.data
+        })
 
 
     @action(detail=False, methods=['get'])
@@ -138,9 +200,17 @@ class PostViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(posts)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Profile posts retrieved successfully",
+                "data": serializer.data
+            })
         serializer = self.get_serializer(posts, many=True)
-        return Response(serializer.data)
+        return Response({
+            "success": True,
+            "message": "Profile posts retrieved successfully",
+            "data": serializer.data
+        })
     
     @action(detail=False, methods=['get'])
     def my_posts(self, request):
@@ -149,9 +219,17 @@ class PostViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(posts)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "My posts retrieved successfully",
+                "data": serializer.data
+            })
         serializer = self.get_serializer(posts, many=True)
-        return Response(serializer.data)
+        return Response({
+            "success": True,
+            "message": "My posts retrieved successfully",
+            "data": serializer.data
+        })
     
     @action(detail=False, methods=['get'])
     def user_posts(self, request):
@@ -159,10 +237,10 @@ class PostViewSet(viewsets.ModelViewSet):
         user_id = request.query_params.get('user_id')
         
         if not user_id:
-            return Response(
-                {'error': 'user_id parameter is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({
+                "success": False,
+                "error": "user_id parameter is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         posts = Post.objects.filter(
             user_id=user_id,
@@ -174,10 +252,18 @@ class PostViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(posts)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "User posts retrieved successfully",
+                "data": serializer.data
+            })
         
         serializer = self.get_serializer(posts, many=True)
-        return Response(serializer.data)
+        return Response({
+            "success": True,
+            "message": "User posts retrieved successfully",
+            "data": serializer.data
+        })
 
 
 class LikeViewSet(viewsets.ModelViewSet):
@@ -199,12 +285,54 @@ class LikeViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response({
+            "success": True,
+            "message": "Post liked successfully",
+            "data": serializer.data
+        }, status=status.HTTP_201_CREATED, headers=headers)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Likes retrieved successfully",
+                "data": serializer.data
+            })
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "success": True,
+            "message": "Likes retrieved successfully",
+            "data": serializer.data
+        })
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response({
+            "success": True,
+            "message": "Like retrieved successfully",
+            "data": serializer.data
+        })
+
     def destroy(self, request, *args, **kwargs):
         """Only the like owner can delete their like (unlike)."""
         like = self.get_object()
         if like.user != request.user:
             raise PermissionDenied("You do not have permission to delete this like.")
-        return super().destroy(request, *args, **kwargs)
+        self.perform_destroy(like)
+        return Response({
+            "success": True,
+            "message": "Post unliked successfully",
+            "data": None
+        }, status=status.HTTP_200_OK)
 
 
 class CommentViewSet(viewsets.ModelViewSet):
@@ -228,19 +356,65 @@ class CommentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response({
+            "success": True,
+            "message": "Comment created successfully",
+            "data": serializer.data
+        }, status=status.HTTP_201_CREATED, headers=headers)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Comments retrieved successfully",
+                "data": serializer.data
+            })
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "success": True,
+            "message": "Comments retrieved successfully",
+            "data": serializer.data
+        })
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response({
+            "success": True,
+            "message": "Comment retrieved successfully",
+            "data": serializer.data
+        })
+
     def update(self, request, *args, **kwargs):
         """Only the comment author can update their comment."""
         comment = self.get_object()
         if comment.user != request.user:
             raise PermissionDenied("You do not have permission to edit this comment.")
-        return super().update(request, *args, **kwargs)
+        partial = kwargs.pop('partial', False)
+        serializer = self.get_serializer(comment, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response({
+            "success": True,
+            "message": "Comment updated successfully",
+            "data": serializer.data
+        })
 
     def partial_update(self, request, *args, **kwargs):
         """Only the comment author can partially update their comment."""
         comment = self.get_object()
         if comment.user != request.user:
             raise PermissionDenied("You do not have permission to edit this comment.")
-        return super().partial_update(request, *args, **kwargs)
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         """
@@ -254,7 +428,12 @@ class CommentViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You do not have permission to delete this comment.")
         
         # Django will automatically cascade delete all replies due to on_delete=CASCADE
-        return super().destroy(request, *args, **kwargs)
+        self.perform_destroy(comment)
+        return Response({
+            "success": True,
+            "message": "Comment deleted successfully",
+            "data": None
+        }, status=status.HTTP_200_OK)
 
 
 class ShareViewSet(viewsets.ModelViewSet):
@@ -276,12 +455,54 @@ class ShareViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response({
+            "success": True,
+            "message": "Post shared successfully",
+            "data": serializer.data
+        }, status=status.HTTP_201_CREATED, headers=headers)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Shares retrieved successfully",
+                "data": serializer.data
+            })
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "success": True,
+            "message": "Shares retrieved successfully",
+            "data": serializer.data
+        })
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response({
+            "success": True,
+            "message": "Share retrieved successfully",
+            "data": serializer.data
+        })
+
     def destroy(self, request, *args, **kwargs):
         """Only the share owner can delete their share."""
         share = self.get_object()
         if share.user != request.user:
             raise PermissionDenied("You do not have permission to delete this share.")
-        return super().destroy(request, *args, **kwargs)
+        self.perform_destroy(share)
+        return Response({
+            "success": True,
+            "message": "Share removed successfully",
+            "data": None
+        }, status=status.HTTP_200_OK)
 
 class FollowViewSet(viewsets.ModelViewSet):
     queryset = Follow.objects.all()
@@ -315,12 +536,54 @@ class FollowViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(follower=self.request.user)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response({
+            "success": True,
+            "message": "User followed successfully",
+            "data": serializer.data
+        }, status=status.HTTP_201_CREATED, headers=headers)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Follows retrieved successfully",
+                "data": serializer.data
+            })
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "success": True,
+            "message": "Follows retrieved successfully",
+            "data": serializer.data
+        })
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response({
+            "success": True,
+            "message": "Follow retrieved successfully",
+            "data": serializer.data
+        })
+
     def destroy(self, request, *args, **kwargs):
         """Only the follower can unfollow"""
         follow = self.get_object()
         if follow.follower != request.user:
             raise PermissionDenied("You do not have permission to delete this follow.")
-        return super().destroy(request, *args, **kwargs)
+        self.perform_destroy(follow)
+        return Response({
+            "success": True,
+            "message": "User unfollowed successfully",
+            "data": None
+        }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'])
     def toggle_follow(self, request):
@@ -328,24 +591,24 @@ class FollowViewSet(viewsets.ModelViewSet):
         following_id = request.data.get('following_id')
         
         if not following_id:
-            return Response(
-                {'error': 'following_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({
+                "success": False,
+                "error": "following_id is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             following_user = User.objects.get(id=following_id)
         except User.DoesNotExist:
-            return Response(
-                {'error': 'User not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({
+                "success": False,
+                "error": "User not found"
+            }, status=status.HTTP_404_NOT_FOUND)
         
         if following_user == request.user:
-            return Response(
-                {'error': 'You cannot follow yourself'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({
+                "success": False,
+                "error": "You cannot follow yourself"
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         follow = Follow.objects.filter(
             follower=request.user,
@@ -355,10 +618,11 @@ class FollowViewSet(viewsets.ModelViewSet):
         if follow:
             # Unfollow
             follow.delete()
-            return Response(
-                {'status': 'unfollowed', 'following': False},
-                status=status.HTTP_200_OK
-            )
+            return Response({
+                "success": True,
+                "message": "User unfollowed successfully",
+                "data": {'status': 'unfollowed', 'following': False}
+            }, status=status.HTTP_200_OK)
         else:
             # Follow
             Follow.objects.create(
@@ -371,10 +635,11 @@ class FollowViewSet(viewsets.ModelViewSet):
                 sender=request.user,
                 notification_type='follow'
             )
-            return Response(
-                {'status': 'followed', 'following': True},
-                status=status.HTTP_201_CREATED
-            )
+            return Response({
+                "success": True,
+                "message": "User followed successfully",
+                "data": {'status': 'followed', 'following': True}
+            }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'])
     def user_profile(self, request):
@@ -388,10 +653,10 @@ class FollowViewSet(viewsets.ModelViewSet):
             try:
                 target_user = User.objects.get(id=user_id)
             except User.DoesNotExist:
-                return Response(
-                    {'error': 'User not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                return Response({
+                    "success": False,
+                    "error": "User not found"
+                }, status=status.HTTP_404_NOT_FOUND)
         
         # Get stats with optimized queries
         followers_count = Follow.objects.filter(following=target_user).count()
@@ -416,20 +681,71 @@ class FollowViewSet(viewsets.ModelViewSet):
         }
         
         serializer = UserProfileSerializer(profile_data)
-        return Response(serializer.data)
-
+        return Response({
+            "success": True,
+            "message": "User profile retrieved successfully",
+            "data": serializer.data
+        })
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ['get', 'patch', 'delete', 'head', 'options']
-
+    
     def get_queryset(self):
         """Get notifications for current user"""
         return Notification.objects.filter(
             recipient=self.request.user
         ).select_related('sender', 'post', 'comment').order_by('-created_at')
-
+    
+    def list(self, request, *args, **kwargs):
+        """Get all notifications for current user"""
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Notifications retrieved successfully",
+                "data": serializer.data
+            })
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "success": True,
+            "message": "Notifications retrieved successfully",
+            "data": serializer.data
+        })
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Get a single notification"""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response({
+            "success": True,
+            "message": "Notification retrieved successfully",
+            "data": serializer.data
+        })
+    
+    def partial_update(self, request, *args, **kwargs):
+        """Partially update a notification"""
+        instance = self.get_object()
+        if instance.recipient != request.user:
+            return Response({
+                "success": False,
+                "error": "You do not have permission to modify this notification."
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        return Response({
+            "success": True,
+            "message": "Notification updated successfully",
+            "data": serializer.data
+        })
+    
     @action(detail=False, methods=['get'])
     def unread(self, request):
         """Get unread notifications only"""
@@ -437,42 +753,74 @@ class NotificationViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(notifications)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Unread notifications retrieved successfully",
+                "data": serializer.data
+            })
         
         serializer = self.get_serializer(notifications, many=True)
-        return Response(serializer.data)
-
+        return Response({
+            "success": True,
+            "message": "Unread notifications retrieved successfully",
+            "data": serializer.data
+        })
+    
     @action(detail=False, methods=['get'])
     def unread_count(self, request):
         """Get count of unread notifications"""
         count = self.get_queryset().filter(is_read=False).count()
-        return Response({'unread_count': count})
-
+        return Response({
+            "success": True,
+            "message": "Unread count retrieved successfully",
+            "data": {'unread_count': count}
+        })
+    
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request):
         """Mark all notifications as read"""
         updated = self.get_queryset().filter(is_read=False).update(is_read=True)
         return Response({
-            'status': 'success',
-            'marked_read': updated
+            "success": True,
+            "message": "All notifications marked as read",
+            "data": {
+                'status': 'success',
+                'marked_read': updated
+            }
         })
-
+    
     @action(detail=True, methods=['post'])
     def mark_read(self, request, pk=None):
         """Mark a single notification as read"""
         notification = self.get_object()
         if notification.recipient != request.user:
-            raise PermissionDenied("You do not have permission to modify this notification.")
+            return Response({
+                "success": False,
+                "error": "You do not have permission to modify this notification."
+            }, status=status.HTTP_403_FORBIDDEN)
         
         notification.is_read = True
         notification.save()
         
         serializer = self.get_serializer(notification)
-        return Response(serializer.data)
-
+        return Response({
+            "success": True,
+            "message": "Notification marked as read",
+            "data": serializer.data
+        })
+    
     def destroy(self, request, *args, **kwargs):
         """Only the recipient can delete their notification"""
         notification = self.get_object()
         if notification.recipient != request.user:
-            raise PermissionDenied("You do not have permission to delete this notification.")
-        return super().destroy(request, *args, **kwargs)
+            return Response({
+                "success": False,
+                "error": "You do not have permission to delete this notification."
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        super().destroy(request, *args, **kwargs)
+        return Response({
+            "success": True,
+            "message": "Notification deleted successfully",
+            "data": None
+        }, status=status.HTTP_200_OK)

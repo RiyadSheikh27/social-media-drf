@@ -54,12 +54,14 @@ INSTALLED_APPS = [
 
     'ckeditor',
     'drf_yasg',
+    'channels',
 
     'accounts',
     'api',
     'interest',
     'post',
     'community',
+    'chats',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
@@ -159,6 +161,16 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'app.wsgi.application'
+ASGI_APPLICATION = 'app.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+        },
+    },
+}
 
 
 # Database

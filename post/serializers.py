@@ -143,7 +143,11 @@ class PostSerializer(serializers.ModelSerializer):
     can_delete = serializers.SerializerMethodField()
     is_liked = serializers.SerializerMethodField()
 
-    media_files = serializers.ListField(max_lenth = 1000, allow_empty_file=False, use_url=True, write_only=True, required=False)
+    media_files = serializers.ListField(
+        child=serializers.FileField(max_length=100000, allow_empty_file=False, use_url=True),
+        write_only=True,
+        required=False
+    )
 
     class Meta:
         model = Post
@@ -168,10 +172,38 @@ class PostSerializer(serializers.ModelSerializer):
                 )
                 file_paths.append(file_path)
 
-            post.media_file.set(file_paths)
+            post.media_file = file_paths
             post.save()
-            
+
         return post
+    
+    def update(self, instance, validated_data):
+        media_files = validated_data.pop('media_files', None)
+        
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        if media_files is not None:
+            # Delete old files if needed
+            if instance.media_file:
+                for old_file in instance.media_file:
+                    if default_storage.exists(old_file):
+                        default_storage.delete(old_file)
+            
+            # Save new files
+            file_paths = []
+            for media_file in media_files:
+                file_path = default_storage.save(
+                    f'posts/{instance.id}/{media_file.name}',
+                    media_file
+                )
+                file_paths.append(file_path)
+            
+            instance.media_file = file_paths
+        
+        instance.save()
+        return instance
 
 
     
