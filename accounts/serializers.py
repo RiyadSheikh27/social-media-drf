@@ -3,6 +3,11 @@ from .models import User, Profile
 import re
 from django.contrib.auth.password_validation import validate_password
 
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username']
+
 class SendOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
 

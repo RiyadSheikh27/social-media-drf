@@ -3,8 +3,10 @@ from rest_framework.routers import DefaultRouter
 from django.urls import path, include
 from interest.views import *
 from post.views import *
+from chats.views import *
 
 router = DefaultRouter()
+
 """ User Interest Section """
 router.register("categories", CategoryViewSet, basename="category")
 router.register("subcategories", SubCategoryViewSet, basename="subcategory")
@@ -19,5 +21,9 @@ router.register(r'follows', FollowViewSet, basename='follow')
 router.register(r'notifications', NotificationViewSet, basename='notification') 
 
 urlpatterns = [
+    path('start/', start_convo, name='start_convo'),
+    path('<int:convo_id>/', get_conversation, name='get_conversation'),
+    path('conversations/', conversations, name='conversations'),
+
     path("", include(router.urls)),
 ]
