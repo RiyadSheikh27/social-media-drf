@@ -1,24 +1,18 @@
 from django.db import models
-from django.conf import settings
+from django.contrib.auth import get_user_model
 
+User = get_user_model()
 
-class Conversation(models.Model):
-    initiator = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="convo_starter"
-    )
-    receiver = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="convo_participant"
-    )
-    start_time = models.DateTimeField(auto_now_add=True)
-
+class Room(models.Model):
+    name = models.CharField(max_length=255, null=True, blank=True)
+    participants = models.ManyToManyField(User, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 class Message(models.Model):
-    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-                              null=True, related_name='message_sender')
-    text = models.CharField(max_length=200, blank=True)
-    attachment = models.FileField(blank=True)
-    conversation_id = models.ForeignKey(Conversation, on_delete=models.CASCADE,)
-    timestamp = models.DateTimeField(auto_now_add=True)
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='messages', null=True, blank=True)
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    content = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ('-timestamp',)
+        ordering = ['created_at']

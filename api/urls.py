@@ -18,12 +18,11 @@ router.register(r'likes', LikeViewSet, basename='like')
 router.register(r'comments', CommentViewSet, basename='comment')
 router.register(r'shares', ShareViewSet, basename='share')
 router.register(r'follows', FollowViewSet, basename='follow')
-router.register(r'notifications', NotificationViewSet, basename='notification') 
+router.register(r'notifications', NotificationViewSet, basename='notification')
+
+""" Chat Section """
+router.register(r'chat/rooms', RoomViewSet)
 
 urlpatterns = [
-    path('start/', start_convo, name='start_convo'),
-    path('conversations/<int:convo_id>/', get_conversation, name='get_conversation'),
-    path('conversations/', conversations, name='conversations'),
-
     path("", include(router.urls)),
 ]
