@@ -1,32 +1,14 @@
-from accounts.serializers import UserSerializer
-from .models import Conversation, Message
 from rest_framework import serializers
-
+from .models import Room, Message
 
 class MessageSerializer(serializers.ModelSerializer):
+    sender = serializers.StringRelatedField()
+
     class Meta:
         model = Message
-        exclude = ('conversation_id',)
+        fields = ['id', 'sender', 'content', 'created_at']
 
-
-class ConversationListSerializer(serializers.ModelSerializer):
-    initiator = UserSerializer()
-    receiver = UserSerializer()
-    last_message = serializers.SerializerMethodField()
-
+class RoomSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Conversation
-        fields = ['initiator', 'receiver', 'last_message']
-
-    def get_last_message(self, instance):
-        message = instance.message_set.first()
-        return MessageSerializer(instance=message).data
-    
-class ConversationSerializer(serializers.ModelSerializer):
-    initiator = UserSerializer()
-    receiver = UserSerializer()
-    message_set = MessageSerializer(many=True)
-
-    class Meta:
-        model = Conversation
-        fields = ['initiator', 'receiver', 'message_set']
+        model = Room
+        fields = ['id', 'name', 'created_at']
