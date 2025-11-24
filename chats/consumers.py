@@ -55,12 +55,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if user.is_authenticated:
             actual_user = User.objects.get(id=user.id)
         else:
-            # If not authenticated, you can either skip saving or create with null sender
-            # Option 1: Skip saving for anonymous users
             return None
-
-            # Option 2: Allow null sender (requires model change)
-            # actual_user = None
 
         return Message.objects.create(
             room=room,

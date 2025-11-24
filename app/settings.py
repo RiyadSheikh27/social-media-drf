@@ -140,21 +140,26 @@ TEMPLATES = [
     },
 ]
 
+import redis
+
+# r = redis.Redis.from_url("rediss://default_ro:AhZmAAIgcDJU6FyX-to8y-7LEg4-B6Cd85H0jDjod0JAbAPOl9zlqQ@included-tadpole-5734.upstash.io:6379")
+
+
 WSGI_APPLICATION = 'app.wsgi.application'
 ASGI_APPLICATION = 'app.asgi.application'
 
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-#         'CONFIG': {"hosts": [('127.0.0.1', 6379)]},
-#     },
-# }
-
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {"hosts": [('127.0.0.1', 6379)]},
     },
 }
+
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels.layers.InMemoryChannelLayer',
+#     },
+# }
 
 
 DATABASES = {
