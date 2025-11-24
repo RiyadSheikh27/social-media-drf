@@ -167,8 +167,7 @@ class PostViewSet(viewsets.ModelViewSet):
             'likes', 'comments', 'shares'
         ).order_by('-engagement', '-created_at')
         
-        # Combine querysets: followed unseen -> followed seen -> top engaged
-        # Limit to reasonable numbers for performance
+
         followed_unseen_list = list(followed_posts_unseen[:20])
         followed_seen_list = list(followed_posts_seen[:10])
         top_engaged_list = list(top_engaged_posts[:10])
