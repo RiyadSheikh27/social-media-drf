@@ -17,6 +17,10 @@ from post.models import *
 from post.serializers import *
 from .utils import *
 import logging
+from interest.models import *
+from django.db import transaction
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,16 @@ from .utils import (
 """Generate JWT tokens"""
 def tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
-    return {'refresh': str(refresh), 'access': str(refresh.access_token)}
+
+    refresh['username'] = user.username
+    refresh['email'] = user.email
+    refresh['role'] = user.role if hasattr(user, 'role') else None
+    refresh['username_set'] = user.username_set if hasattr(user, 'username_set') else None
+
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token)
+    }
 
 
 """Email OTP Registration Flow"""
@@ -102,7 +115,7 @@ class VerifyOTPView(APIView):
             }, status=400)
 
 
-"""Set Credential"""
+# views.py - Updated SetCredentialsView
 class SetCredentialsView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -118,25 +131,25 @@ class SetCredentialsView(APIView):
                 return Response({
                     "success": False,
                     "error": "If not authenticated, include 'email' field."
-                    }, status=400)
+                }, status=400)
             try:
                 user = User.objects.get(email=email.lower())
             except User.DoesNotExist:
                 return Response({
                     "success": False,
                     "error": "User not found"
-                    }, status=404)
+                }, status=404)
             if not user.email_verified:
                 return Response({
                     "success": False,
                     "error": "Email not verified"
-                    }, status=400)
+                }, status=400)
 
         if user.username_set:
             return Response({
                 "success": False,
                 "error": "Credentials already set."
-                }, status=403)
+            }, status=403)
 
         username = ser.validated_data['username']
         password = ser.validated_data['password']
@@ -145,7 +158,7 @@ class SetCredentialsView(APIView):
             return Response({
                 "success": False,
                 "username": "Already taken."
-                }, status=400)
+            }, status=400)
 
         user.username = username
         user.set_password(password)
@@ -154,9 +167,10 @@ class SetCredentialsView(APIView):
 
         return Response({
             "success": True,
-            "message": "Credentials set successfully. You can now log in."
-            }, status=201)
-
+            "message": "Credentials set successfully. You can now log in.",
+            "tokens": tokens_for_user(user)
+        }, status=201)
+        
 """Login View"""
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -192,7 +206,7 @@ class LoginView(APIView):
                 "success": False,
                 "error": "Email not verified"
                 }, status=403)
-
+        
         return Response({
             "success": True,
             "message": "Login successful", 
@@ -309,8 +323,9 @@ class ProfileViewSet(viewsets.ModelViewSet):
         
         return Response({
             "success": False,
-            "error": "Invalid data."},
-            serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            "error": "Invalid data.",
+            "details": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 
     @action(detail=False, methods=['get'])

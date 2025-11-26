@@ -3,7 +3,9 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from .models import Room, Message
 
+""" Chat Consumer """
 class ChatConsumer(AsyncWebsocketConsumer):
+    """ Consumer for Chat """
     async def connect(self):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group = f'chat_{self.room_id}'
@@ -62,3 +64,5 @@ class ChatConsumer(AsyncWebsocketConsumer):
             sender=actual_user,
             content=content
         )
+    
+""" End of Chat Consumer """

@@ -2,8 +2,9 @@ from rest_framework import serializers
 from .models import *
 from django.core.files.storage import default_storage
 
-
+""" Serializers for Posts """
 class LikeSerializer(serializers.ModelSerializer):
+    """ Serializer for Like """
     user_name = serializers.CharField(source='user.username', read_only=True)
     
     class Meta:
@@ -40,6 +41,7 @@ class RecursiveSerializer(serializers.Serializer):
         return serializer.data
 
 class CommentSerializer(serializers.ModelSerializer):
+    """ Serializer for Comment """
     user_name = serializers.CharField(source='user.username', read_only=True)
     replies = RecursiveSerializer(many=True, read_only=True)
     replies_count = serializers.SerializerMethodField()
@@ -103,6 +105,7 @@ class CommentSerializer(serializers.ModelSerializer):
 
 
 class ShareSerializer(serializers.ModelSerializer):
+    """ Serializer for Share """
     user_name = serializers.CharField(source='user.username', read_only=True)
     post_title = serializers.CharField(source='post.title', read_only=True)
     
@@ -134,6 +137,7 @@ class ShareSerializer(serializers.ModelSerializer):
 
 
 class PostSerializer(serializers.ModelSerializer):
+    """ Serializer for Post """
     user_name = serializers.CharField(source='user.username', read_only=True)
     likes_count = serializers.IntegerField(source='likes.count', read_only=True)
     comments_count = serializers.IntegerField(source='comments.count', read_only=True)
@@ -231,6 +235,7 @@ class PostSerializer(serializers.ModelSerializer):
         return False
     
 class FollowSerializer(serializers.ModelSerializer):
+    """ Serializer for Follow """
     follower_name = serializers.CharField(source='follower.username', read_only=True)
     following_name = serializers.CharField(source='following.username', read_only=True)
 
@@ -269,6 +274,7 @@ class FollowSerializer(serializers.ModelSerializer):
         return follow
     
 class NotificationSerializer(serializers.ModelSerializer):
+    """ Serializer for Notification """
     sender_name = serializers.CharField(source='sender.username', read_only=True)
     post_title = serializers.CharField(source='post.title', read_only=True)
     
@@ -281,9 +287,12 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only_fields = ['sender', 'created_at']
 
 class UserProfileSerializer(serializers.Serializer):
+    """ Serializer for User Profile """
     user_id = serializers.IntegerField()
     username = serializers.CharField()
     followers_count = serializers.IntegerField()
     following_count = serializers.IntegerField()
     posts_count = serializers.IntegerField()
     is_following = serializers.BooleanField()
+
+""" End of Serializers for Posts """

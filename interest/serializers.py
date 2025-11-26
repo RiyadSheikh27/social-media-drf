@@ -1,11 +1,11 @@
 # serializers.py
 from rest_framework import serializers
-from .models import Category, SubCategory, UserInterest
+from .models import *
 
-
+""" Serializers for Interest """
 class SubCategorySerializer(serializers.ModelSerializer):
+    """ Serializer for SubCategory """
     category_name = serializers.CharField(write_only=True)
-
     class Meta:
         model = SubCategory
         fields = ['id', 'category_name', 'name']
@@ -17,37 +17,10 @@ class SubCategorySerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    """ Serializer for Category """
     subcategories = SubCategorySerializer(many=True, read_only=True)
-
     class Meta:
         model = Category
         fields = ['id', 'name', 'subcategories']
 
-
-class UserInterestSerializer(serializers.ModelSerializer):
-    subcategories = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=SubCategory.objects.all()
-    )
-
-    class Meta:
-        model = UserInterest
-        fields = ['id', 'user', 'subcategories', 'updated_at']
-        read_only_fields = ['user', 'updated_at']
-
-    def create(self, validated_data):
-        subcategories = validated_data.pop('subcategories', [])
-        user = self.context['request'].user
-        instance, _ = UserInterest.objects.get_or_create(user=user)
-        instance.subcategories.set(subcategories)
-        instance.save()
-        return instance
-
-    def to_representation(self, instance):
-        data = {}
-        subcategories = instance.subcategories.select_related('category').all()
-        for sub in subcategories:
-            category_name = sub.category.name
-            if category_name not in data:
-                data[category_name] = []
-            data[category_name].append({'id': sub.id, 'name': sub.name})
-        return data
+""" End of Serializers for Interest """

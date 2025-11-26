@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import User, Profile
 import re
 from django.contrib.auth.password_validation import validate_password
+from interest.models import SubCategory
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -47,7 +48,7 @@ class SetCredentialsSerializer(serializers.Serializer):
         """
         if len(value) < 8:
             raise serializers.ValidationError("Password must be at least 8 characters long.")
-        validate_password(value)  # Django's built-in password validators
+        validate_password(value)  
         return value
 
 class LoginSerializer(serializers.Serializer):
@@ -69,14 +70,20 @@ class ProfileSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source='user.id', read_only=True)
     can_edit = serializers.SerializerMethodField()
     posts_count = serializers.SerializerMethodField()
-    
+    interests = serializers.SerializerMethodField()  # Add this
+    subcategories = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=SubCategory.objects.all(),
+        required=False
+    )
+
     class Meta:
         model = Profile
         fields = [
             'id', 'user', 'user_id', 'username', 'email',
             'display_name', 'about', 'social_link', 'avatar', 
-            'cover_photo', 'created_at', 'updated_at', 
-            'can_edit', 'posts_count'
+            'cover_photo', 'subcategories', 'interests',  # Added interests
+            'created_at', 'updated_at', 'can_edit', 'posts_count'
         ]
         read_only_fields = ['user', 'created_at', 'updated_at']
 
@@ -89,6 +96,22 @@ class ProfileSerializer(serializers.ModelSerializer):
     def get_posts_count(self, obj):
         """Get count of approved posts by this user"""
         return obj.user.posts.filter(status='approved').count()
+    
+    def get_interests(self, obj):
+        """Group interests by category for better display"""
+        interests_by_category = {}
+        subcategories = obj.subcategories.select_related('category').all()
+        
+        for sub in subcategories:
+            category_name = sub.category.name
+            if category_name not in interests_by_category:
+                interests_by_category[category_name] = []
+            interests_by_category[category_name].append({
+                'id': sub.id,
+                'name': sub.name
+            })
+        
+        return interests_by_category
 
     def validate_social_link(self, value):
         """Validate social link URL"""
@@ -96,18 +119,30 @@ class ProfileSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Social link must be a valid URL starting with http:// or https://")
         return value
 
-
 class ProfileUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating profile - excludes read-only user info"""
+    """Serializer for updating profile - includes interests"""
+    subcategories = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=SubCategory.objects.all(),
+        required=False,
+        allow_empty=True
+    )
+    
     class Meta:
         model = Profile
         fields = [
             'display_name', 'about', 'social_link', 
-            'avatar', 'cover_photo'
+            'avatar', 'cover_photo', 'subcategories'  # Added subcategories
         ]
 
     def validate_social_link(self, value):
         """Validate social link URL"""
         if value and not value.startswith(('http://', 'https://')):
             raise serializers.ValidationError("Social link must be a valid URL starting with http:// or https://")
+        return value
+    
+    def validate_subcategories(self, value):
+        """Optional: Add validation for subcategories"""
+        if len(value) > 20:  # Example: limit to 20 interests
+            raise serializers.ValidationError("You can select a maximum of 20 interests.")
         return value

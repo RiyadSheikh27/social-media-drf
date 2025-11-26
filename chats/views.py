@@ -4,7 +4,9 @@ from rest_framework.response import Response
 from .models import Room, Message
 from .serializers import RoomSerializer, MessageSerializer
 
+""" Viewset for Chat """
 class RoomViewSet(viewsets.ModelViewSet):
+    """ Viewset for Room """
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
 

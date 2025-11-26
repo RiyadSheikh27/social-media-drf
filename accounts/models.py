@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
-
+from interest.models import SubCategory
 class User(AbstractUser):
     ROLE_CHOICES = [
         ('user', 'User'),
@@ -32,13 +32,19 @@ class Profile(models.Model):
     social_link = models.URLField(blank=True, null=True)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
     cover_photo = models.ImageField(upload_to='covers/', blank=True, null=True)
-    created_at = models.DateTimeField(default=timezone.now, null=True)
-    updated_at = models.DateTimeField(default=timezone.now, null=True)
+    subcategories = models.ManyToManyField(
+        SubCategory, 
+        related_name="interested_users",
+        blank=True  # Make it optional
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True, blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return self.display_name if self.display_name else self.user.username
-
-
 # Automatically create profile when user is created
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_user_profile(sender, instance, created, **kwargs):

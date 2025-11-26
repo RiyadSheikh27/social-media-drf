@@ -2,7 +2,9 @@ from django.db import models
 from django.conf import settings
 from ckeditor.fields import RichTextField
 
+""" Post Models """
 class Post(models.Model):
+    """ Post model for Posts """
     POST_TYPE_CHOICES = [
         ('text', 'Text'),
         ('media', 'Image/Video'),
@@ -54,6 +56,7 @@ class Post(models.Model):
     
 
 class Like(models.Model):
+    """ Like model for Posts """
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='likes')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -70,6 +73,7 @@ class Like(models.Model):
 
 
 class Comment(models.Model):
+    """ Comment model for Posts """
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comments')
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
@@ -88,6 +92,7 @@ class Comment(models.Model):
         return f"Comment by {self.user.username} on {self.post.title}"
 
 class Share(models.Model):
+    """ Share model for Posts """
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='shares')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -103,6 +108,7 @@ class Share(models.Model):
     
 
 class Follow(models.Model):
+    """ Follow model for Posts """
     follower = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
@@ -126,6 +132,7 @@ class Follow(models.Model):
         return f"{self.follower.username} follows {self.following.username}"
     
 class Notification(models.Model):
+    """ Notification model for Posts """
     NOTIFICATION_TYPES = [
         ('like', 'Like'),
         ('comment', 'Comment'),
@@ -172,6 +179,7 @@ class Notification(models.Model):
         return f"{self.sender.username} {self.notification_type} - {self.recipient.username}"
 
 class PostView(models.Model):
+    """ PostView model for Posts """
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='post_views')
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='views')
     viewed_at = models.DateTimeField(auto_now_add=True)
@@ -185,3 +193,5 @@ class PostView(models.Model):
 
     def __str__(self):
         return f"{self.user.username} viewed {self.post.title}"
+    
+""" End of Post Models """

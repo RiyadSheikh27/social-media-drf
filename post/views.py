@@ -11,11 +11,11 @@ from .serializers import *
 from django.core.files.storage import default_storage
 from rest_framework import parsers
 
-
-
 User = get_user_model()
 
+""" Viewset for Posts """
 class PostViewSet(viewsets.ModelViewSet):
+    """ Viewset for Post """
     queryset = Post.objects.all().order_by('-created_at')
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -266,6 +266,7 @@ class PostViewSet(viewsets.ModelViewSet):
 
 
 class LikeViewSet(viewsets.ModelViewSet):
+    """ Viewset for Like """
     queryset = Like.objects.all()
     serializer_class = LikeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -335,6 +336,7 @@ class LikeViewSet(viewsets.ModelViewSet):
 
 
 class CommentViewSet(viewsets.ModelViewSet):
+    """ Viewset for Comment """
     queryset = Comment.objects.all()
     serializer_class = CommentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -436,6 +438,7 @@ class CommentViewSet(viewsets.ModelViewSet):
 
 
 class ShareViewSet(viewsets.ModelViewSet):
+    """ Viewset for Share """
     queryset = Share.objects.all()
     serializer_class = ShareSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -504,6 +507,7 @@ class ShareViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK)
 
 class FollowViewSet(viewsets.ModelViewSet):
+    """ Viewset for Follow """
     queryset = Follow.objects.all()
     serializer_class = FollowSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -686,6 +690,7 @@ class FollowViewSet(viewsets.ModelViewSet):
             "data": serializer.data
         })
 class NotificationViewSet(viewsets.ModelViewSet):
+    """ Viewset for Notification """
     queryset = Notification.objects.all()
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -823,3 +828,5 @@ class NotificationViewSet(viewsets.ModelViewSet):
             "message": "Notification deleted successfully",
             "data": None
         }, status=status.HTTP_200_OK)
+    
+""" End of Viewset for Posts """

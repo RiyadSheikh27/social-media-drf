@@ -4,13 +4,14 @@ from django.urls import path, include
 from interest.views import *
 from post.views import *
 from chats.views import *
+from marketplace.views import *
 
 router = DefaultRouter()
 
 """ User Interest Section """
 router.register("categories", CategoryViewSet, basename="category")
 router.register("subcategories", SubCategoryViewSet, basename="subcategory")
-router.register("interests", UserInterestViewSet, basename="interest")
+# router.register("interests", UserInterestViewSet, basename="interest")
 
 """ Post Section """
 router.register(r'posts', PostViewSet, basename='post')
@@ -19,6 +20,11 @@ router.register(r'comments', CommentViewSet, basename='comment')
 router.register(r'shares', ShareViewSet, basename='share')
 router.register(r'follows', FollowViewSet, basename='follow')
 router.register(r'notifications', NotificationViewSet, basename='notification')
+
+""" Marketplace Section """
+router.register(r'marketplace/categories', MarketplaceCategoryViewSet, basename="marketplace-category")
+router.register(r'marketplace/subcategories', MarketplaceSubCategoryViewSet, basename="marketplace-subcategory")
+router.register(r'marketplace/items', MarketplaceProductViewSet, basename="marketplace-item")
 
 """ Chat Section """
 router.register(r'chat/rooms', RoomViewSet)
