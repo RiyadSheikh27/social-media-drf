@@ -208,8 +208,6 @@ class PostSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
-
-
     
 
     def get_comments(self, obj):
