@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from ckeditor.fields import RichTextField
+from community.models import *
 
 """ Post Models """
 class Post(models.Model):
@@ -138,6 +139,11 @@ class Notification(models.Model):
         ('comment', 'Comment'),
         ('share', 'Share'),
         ('follow', 'Follow'),
+        ('community_invite', 'Community Invitation'),
+        ('community_join_request', 'Join Request'),
+        ('community_join_approved', 'Join Approved'),
+        ('community_post', 'New Community Post'),
+        ('community_role_changed', 'Role Changed'),
     ]
 
     recipient = models.ForeignKey(
@@ -150,7 +156,7 @@ class Notification(models.Model):
         on_delete=models.CASCADE,
         related_name='sent_notifications'
     )
-    notification_type = models.CharField(max_length=10, choices=NOTIFICATION_TYPES)
+    notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPES)
     post = models.ForeignKey(
         Post,
         on_delete=models.CASCADE,
@@ -165,6 +171,7 @@ class Notification(models.Model):
         blank=True,
         related_name='notifications'
     )
+    community = models.ForeignKey('community.Community', on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

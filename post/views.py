@@ -10,21 +10,23 @@ from .models import *
 from .serializers import *
 from django.core.files.storage import default_storage
 from rest_framework import parsers
+from community.models import *
+from community.serializers import *
 
 User = get_user_model()
 
 """ Viewset for Posts """
 class PostViewSet(viewsets.ModelViewSet):
-    """ Viewset for Post """
+    """Enhanced PostViewSet with community integration"""
     queryset = Post.objects.all().order_by('-created_at')
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
         user = self.request.user
         if self.action == 'list':
+            # Show approved posts (both personal and community)
             return Post.objects.filter(status='approved').order_by('-created_at')
         else:
             return Post.objects.filter(
@@ -32,7 +34,27 @@ class PostViewSet(viewsets.ModelViewSet):
             ).order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        """Create post with community validation"""
+        community = serializer.validated_data.get('community')
+        
+        # If posting to a community, verify membership
+        if community:
+            membership = CommunityMember.objects.filter(
+                user=self.request.user,
+                community=community,
+                is_approved=True
+            ).first()
+            
+            if not membership:
+                raise PermissionDenied("You must be a member to post in this community.")
+            
+            # Check if community requires approval for posts
+            if community.visibility == 'private':
+                serializer.save(user=self.request.user, status='pending')
+            else:
+                serializer.save(user=self.request.user)
+        else:
+            serializer.save(user=self.request.user)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -44,115 +66,78 @@ class PostViewSet(viewsets.ModelViewSet):
             "message": "Post created successfully",
             "data": serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
-    
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response({
-                "success": True,
-                "message": "Posts retrieved successfully",
-                "data": serializer.data
-            })
-        serializer = self.get_serializer(queryset, many=True)
-        return Response({
-            "success": True,
-            "message": "Posts retrieved successfully",
-            "data": serializer.data
-        })
-
-    def retrieve(self, request, *args, **kwargs):
-        post = self.get_object()
-        PostView.objects.get_or_create(user=request.user, post=post)
-        serializer = self.get_serializer(post)
-        return Response({
-            "success": True,
-            "message": "Post retrieved successfully",
-            "data": serializer.data
-        })
-
-    def update(self, request, *args, **kwargs):
-        """Only the post owner can update their post."""
-        post = self.get_object()
-        if post.user != request.user:
-            raise PermissionDenied("You do not have permission to edit this post.")
-        partial = kwargs.pop('partial', False)
-        serializer = self.get_serializer(post, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response({
-            "success": True,
-            "message": "Post updated successfully",
-            "data": serializer.data
-        })
-
-    def partial_update(self, request, *args, **kwargs):
-        """Only the post owner can partially update their post."""
-        post = self.get_object()
-        if post.user != request.user:
-            raise PermissionDenied("You do not have permission to edit this post.")
-        kwargs['partial'] = True
-        return self.update(request, *args, **kwargs)
-
-    def destroy(self, request, *args, **kwargs):
-        """Only the post owner can delete their post."""
-        post = self.get_object()
-        if post.user != request.user:
-            raise PermissionDenied("You do not have permission to delete this post.")
-        
-        if post.media_file:
-            for file_path in post.media_file:
-                if default_storage.exists(file_path):
-                    default_storage.delete(file_path)
-
-        self.perform_destroy(post)
-        return Response({
-            "success": True,
-            "message": "Post deleted successfully",
-            "data": None
-        }, status=status.HTTP_200_OK)
-    
     @action(detail=False, methods=['get'])
     def news_feed(self, request):
         """
-        Optimized news feed showing:
-        1. Posts from followed users (prioritized, unseen first)
-        2. Top engaged posts from others (excluding already viewed)
+        Enhanced news feed showing:
+        1. Posts from followed users (personal posts)
+        2. Posts from joined communities
+        3. Top engaged posts from popular communities (for discovery)
+        4. Top engaged posts from non-followed users
+        
+        Priority: Unseen followed content > Community content > Discovery content
         """
         user = request.user
         
         # Get users that current user follows
         following_ids = Follow.objects.filter(follower=user).values_list('following_id', flat=True)
         
+        # Get communities user is member of
+        joined_community_ids = CommunityMember.objects.filter(
+            user=user,
+            is_approved=True
+        ).values_list('community_id', flat=True)
+        
         # Get posts already viewed by user
         viewed_post_ids = PostView.objects.filter(user=user).values_list('post_id', flat=True)
         
-        # Posts from followed users (unseen first, then seen)
+        # 1. Personal posts from followed users (unseen first)
         followed_posts_unseen = Post.objects.filter(
             user_id__in=following_ids,
-            status='approved'
+            status='approved',
+            community__isnull=True  # Only personal posts
         ).exclude(
             id__in=viewed_post_ids
         ).select_related('user').prefetch_related(
             'likes', 'comments', 'shares'
         ).order_by('-created_at')
         
-        followed_posts_seen = Post.objects.filter(
-            user_id__in=following_ids,
-            status='approved',
-            id__in=viewed_post_ids
-        ).select_related('user').prefetch_related(
-            'likes', 'comments', 'shares'
-        ).order_by('-created_at')
-        
-        # Top engaged posts from non-followed users (excluding viewed)
-        # Calculate engagement within last 7 days for relevancy
-        recent_date = timezone.now() - timedelta(days=7)
-        
-        top_engaged_posts = Post.objects.filter(
+        # 2. Posts from joined communities (unseen first, pinned at top)
+        community_posts_unseen = Post.objects.filter(
+            community_id__in=joined_community_ids,
             status='approved'
+        ).exclude(
+            id__in=viewed_post_ids
+        ).select_related('user', 'community').prefetch_related(
+            'likes', 'comments', 'shares'
+        ).order_by('-is_pinned', '-created_at')
+        
+        # 3. Top posts from popular communities (for discovery)
+        recent_date = timezone.now() - timedelta(days=7)
+        popular_community_ids = Community.objects.filter(
+            visibility='public'
+        ).exclude(
+            id__in=joined_community_ids
+        ).order_by('-members_count')[:20].values_list('id', flat=True)
+        
+        popular_community_posts = Post.objects.filter(
+            community_id__in=popular_community_ids,
+            status='approved',
+            created_at__gte=recent_date
+        ).exclude(
+            id__in=viewed_post_ids
+        ).annotate(
+            engagement=Count('likes') + Count('comments') * 2 + Count('shares') * 3
+        ).select_related('user', 'community').prefetch_related(
+            'likes', 'comments', 'shares'
+        ).order_by('-engagement', '-created_at')
+        
+        # 4. Top engaged personal posts from non-followed users
+        top_personal_posts = Post.objects.filter(
+            status='approved',
+            community__isnull=True,
+            created_at__gte=recent_date
         ).exclude(
             user_id__in=following_ids
         ).exclude(
@@ -161,18 +146,34 @@ class PostViewSet(viewsets.ModelViewSet):
             id__in=viewed_post_ids
         ).annotate(
             engagement=Count('likes') + Count('comments') * 2 + Count('shares') * 3
-        ).filter(
-            created_at__gte=recent_date
         ).select_related('user').prefetch_related(
             'likes', 'comments', 'shares'
         ).order_by('-engagement', '-created_at')
         
-
-        followed_unseen_list = list(followed_posts_unseen[:20])
-        followed_seen_list = list(followed_posts_seen[:10])
-        top_engaged_list = list(top_engaged_posts[:10])
+        # 5. Seen posts from followed users and communities (lower priority)
+        followed_posts_seen = Post.objects.filter(
+            Q(user_id__in=following_ids, community__isnull=True) |
+            Q(community_id__in=joined_community_ids),
+            status='approved',
+            id__in=viewed_post_ids
+        ).select_related('user', 'community').prefetch_related(
+            'likes', 'comments', 'shares'
+        ).order_by('-created_at')
         
-        combined_posts = followed_unseen_list + followed_seen_list + top_engaged_list
+        # Combine in priority order
+        followed_unseen_list = list(followed_posts_unseen[:15])
+        community_unseen_list = list(community_posts_unseen[:15])
+        popular_community_list = list(popular_community_posts[:10])
+        top_personal_list = list(top_personal_posts[:10])
+        followed_seen_list = list(followed_posts_seen[:10])
+        
+        combined_posts = (
+            followed_unseen_list + 
+            community_unseen_list + 
+            popular_community_list + 
+            top_personal_list + 
+            followed_seen_list
+        )
         
         # Paginate the combined results
         page = self.paginate_queryset(combined_posts)
@@ -191,11 +192,130 @@ class PostViewSet(viewsets.ModelViewSet):
             "data": serializer.data
         })
 
+    @action(detail=False, methods=['get'])
+    def community_posts(self, request):
+        """Get posts from a specific community"""
+        community_name = request.query_params.get('community')
+        
+        if not community_name:
+            return Response({
+                "success": False,
+                "error": "community parameter is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            community = Community.objects.get(name=community_name)
+        except Community.DoesNotExist:
+            return Response({
+                "success": False,
+                "error": "Community not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if user can view posts
+        if community.visibility == 'private':
+            membership = CommunityMember.objects.filter(
+                user=request.user,
+                community=community,
+                is_approved=True
+            ).first()
+            
+            if not membership:
+                return Response({
+                    "success": False,
+                    "error": "You must be a member to view posts in this private community"
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        posts = Post.objects.filter(
+            community=community,
+            status='approved'
+        ).select_related('user', 'community').prefetch_related(
+            'likes', 'comments', 'shares'
+        ).order_by('-is_pinned', '-created_at')
+        
+        page = self.paginate_queryset(posts)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "success": True,
+                "message": "Community posts retrieved successfully",
+                "data": serializer.data
+            })
+        
+        serializer = self.get_serializer(posts, many=True)
+        return Response({
+            "success": True,
+            "message": "Community posts retrieved successfully",
+            "data": serializer.data
+        })
+
+    @action(detail=True, methods=['post'])
+    def pin(self, request, pk=None):
+        """Pin a post in a community (moderators/admins only)"""
+        post = self.get_object()
+        
+        if not post.community:
+            return Response({
+                "success": False,
+                "error": "Only community posts can be pinned"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if user can manage community
+        membership = CommunityMember.objects.filter(
+            user=request.user,
+            community=post.community,
+            is_approved=True
+        ).first()
+        
+        if not (membership and membership.role in ['admin', 'moderator']):
+            raise PermissionDenied("You do not have permission to pin posts.")
+        
+        post.is_pinned = True
+        post.save()
+        
+        return Response({
+            "success": True,
+            "message": "Post pinned successfully",
+            "data": self.get_serializer(post).data
+        })
+
+    @action(detail=True, methods=['post'])
+    def unpin(self, request, pk=None):
+        """Unpin a post"""
+        post = self.get_object()
+        
+        if not post.community:
+            return Response({
+                "success": False,
+                "error": "Only community posts can be unpinned"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if user can manage community
+        membership = CommunityMember.objects.filter(
+            user=request.user,
+            community=post.community,
+            is_approved=True
+        ).first()
+        
+        if not (membership and membership.role in ['admin', 'moderator']):
+            raise PermissionDenied("You do not have permission to unpin posts.")
+        
+        post.is_pinned = False
+        post.save()
+        
+        return Response({
+            "success": True,
+            "message": "Post unpinned successfully",
+            "data": self.get_serializer(post).data
+        })
 
     @action(detail=False, methods=['get'])
     def profile_posts(self, request):
-        """Get all posts created by the current user (any status)"""
-        posts = Post.objects.filter(user=request.user, status='approved').order_by('-created_at')
+        """Get approved posts created by current user (both personal and community)"""
+        posts = Post.objects.filter(
+            user=request.user, 
+            status='approved'
+        ).select_related('community').order_by('-created_at')
+        
         page = self.paginate_queryset(posts)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -210,11 +330,11 @@ class PostViewSet(viewsets.ModelViewSet):
             "message": "Profile posts retrieved successfully",
             "data": serializer.data
         })
-    
+
     @action(detail=False, methods=['get'])
     def my_posts(self, request):
-        """Get all posts created by the current user (any status)"""
-        posts = Post.objects.filter(user=request.user).order_by('-created_at')
+        """Get all posts created by current user (any status)"""
+        posts = Post.objects.filter(user=request.user).select_related('community').order_by('-created_at')
         page = self.paginate_queryset(posts)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -229,10 +349,10 @@ class PostViewSet(viewsets.ModelViewSet):
             "message": "My posts retrieved successfully",
             "data": serializer.data
         })
-    
+
     @action(detail=False, methods=['get'])
     def user_posts(self, request):
-        """Get approved posts by a specific user (via query param ?user_id=X)"""
+        """Get approved posts by a specific user"""
         user_id = request.query_params.get('user_id')
         
         if not user_id:
@@ -244,7 +364,7 @@ class PostViewSet(viewsets.ModelViewSet):
         posts = Post.objects.filter(
             user_id=user_id,
             status='approved'
-        ).select_related('user').prefetch_related(
+        ).select_related('user', 'community').prefetch_related(
             'likes', 'comments', 'shares'
         ).order_by('-created_at')
         
@@ -263,7 +383,6 @@ class PostViewSet(viewsets.ModelViewSet):
             "message": "User posts retrieved successfully",
             "data": serializer.data
         })
-
 
 class LikeViewSet(viewsets.ModelViewSet):
     """ Viewset for Like """
