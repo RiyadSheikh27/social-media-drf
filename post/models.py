@@ -20,12 +20,22 @@ class Post(models.Model):
     ]
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='posts')
+    community = models.ForeignKey(
+        'community.Community', 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True, 
+        related_name='posts',
+        help_text='If set, this is a community post. If null, it is a personal post.'
+    )
+
     title = models.CharField(max_length=255)
     post_type = models.CharField(max_length=10, choices=POST_TYPE_CHOICES)
     content = RichTextField(blank=True, null=True)
     media_file = models.JSONField(default=list, blank=True, null=True)
     link = models.URLField(blank=True, null=True)
     tags = models.JSONField(default=list, blank=True)
+    is_pinned = models.BooleanField(default=False, help_text='Pinned posts appear at the top')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='approved')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

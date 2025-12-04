@@ -11,7 +11,6 @@ router = DefaultRouter()
 """ User Interest Section """
 router.register("categories", CategoryViewSet, basename="category")
 router.register("subcategories", SubCategoryViewSet, basename="subcategory")
-# router.register("interests", UserInterestViewSet, basename="interest")
 
 """ Post Section """
 router.register(r'posts', PostViewSet, basename='post')
@@ -26,11 +25,12 @@ router.register(r'marketplace/categories', MarketplaceCategoryViewSet, basename=
 router.register(r'marketplace/subcategories', MarketplaceSubCategoryViewSet, basename="marketplace-subcategory")
 router.register(r'marketplace/items', MarketplaceProductViewSet, basename="marketplace-item")
 
+""" Community Section """
 router.register(r'communities', CommunityViewSet, basename='community')
 router.register(r'join-requests', CommunityJoinRequestViewSet, basename='join-request')
 
 """ Chat Section """
-router.register(r'chat/rooms', RoomViewSet)
+# router.register(r'chat/rooms', RoomViewSet)
 
 urlpatterns = [
     path("", include(router.urls)),

@@ -5,9 +5,16 @@ from django.contrib.auth.password_validation import validate_password
 from interest.models import SubCategory
 
 class UserSerializer(serializers.ModelSerializer):
+    avatar = serializers.SerializerMethodField(read_only=True)
     class Meta:
         model = User
-        fields = ['username']
+        fields = ['username', 'avatar']
+
+    def get_avatar(self, obj):
+        try:
+            return obj.profile.avatar.url if obj.profile.avatar else None
+        except Profile.DoesNotExist:
+            return None
 
 class SendOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()

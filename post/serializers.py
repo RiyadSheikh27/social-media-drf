@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import *
 from django.core.files.storage import default_storage
+from accounts.models import Profile
 
 """ Serializers for Posts """
 class LikeSerializer(serializers.ModelSerializer):
@@ -47,11 +48,18 @@ class CommentSerializer(serializers.ModelSerializer):
     replies_count = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField(source='user.avatar', read_only=True)
 
     class Meta:
         model = Comment
-        fields = ['id', 'user', 'user_name', 'post', 'parent', 'content', 'created_at', 'updated_at', 'replies', 'replies_count', 'can_edit', 'can_delete']
+        fields = ['id', 'user', 'user_name', 'avatar', 'post', 'parent', 'content', 'created_at', 'updated_at', 'replies', 'replies_count', 'can_edit', 'can_delete']
         read_only_fields = ['user', 'created_at', 'updated_at']
+
+    def get_avatar(self, obj):
+        try:
+            return obj.user.profile.avatar.url if obj.user.profile.avatar else None
+        except Profile.DoesNotExist:
+            return None
 
     def get_replies_count(self, obj):
         return obj.replies.count()
@@ -139,6 +147,9 @@ class ShareSerializer(serializers.ModelSerializer):
 class PostSerializer(serializers.ModelSerializer):
     """ Serializer for Post """
     user_name = serializers.CharField(source='user.username', read_only=True)
+    avatar = serializers.SerializerMethodField(source='user.avatar', read_only=True)
+
+
     likes_count = serializers.IntegerField(source='likes.count', read_only=True)
     comments_count = serializers.IntegerField(source='comments.count', read_only=True)
     shares_count = serializers.IntegerField(source='shares.count', read_only=True)
@@ -152,17 +163,22 @@ class PostSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False
     )
-
     class Meta:
         model = Post
         fields = [
-            'id', 'user', 'user_name', 'title', 'post_type', 'content', 'media_file', 'media_files', 'link',
+            'id', 'user', 'user_name', 'avatar', 'title', 'post_type', 'content', 'media_file', 'media_files', 'link',
             'tags', 'status', 'created_at', 'updated_at',
             'likes_count', 'comments_count', 'shares_count', 'comments',
             'can_edit', 'can_delete', 'is_liked'
         ]
         read_only_fields = ['user', 'likes_count', 'comments_count', 'shares_count', 'created_at', 'updated_at']
 
+    def get_avatar(self, obj):
+        try:
+            return obj.user.profile.avatar.url if obj.user.profile.avatar else None
+        except Profile.DoesNotExist:
+            return None
+        
     def create(self, validated_data):
         media_files = validated_data.pop('media_files', [])
         post = Post.objects.create(**validated_data)
