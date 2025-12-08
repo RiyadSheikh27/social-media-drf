@@ -169,7 +169,7 @@ class PostSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_name', 'avatar', 'title', 'post_type', 'content', 'media_file', 'media_files', 'link',
             'tags', 'status', 'created_at', 'updated_at',
             'likes_count', 'comments_count', 'shares_count', 'comments',
-            'can_edit', 'can_delete', 'is_liked'
+            'can_edit', 'can_delete', 'is_liked', 'community',
         ]
         read_only_fields = ['user', 'likes_count', 'comments_count', 'shares_count', 'created_at', 'updated_at']
 

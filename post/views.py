@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from django.db.models import Q, Count, Exists, OuterRef, Prefetch
+from django.db.models import Q, Count, Exists, OuterRef, Prefetch, Case, When, IntegerField, F
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import timedelta
@@ -12,8 +12,10 @@ from django.core.files.storage import default_storage
 from rest_framework import parsers
 from community.models import *
 from community.serializers import *
+import random
 
 User = get_user_model()
+
 
 """ Viewset for Posts """
 class PostViewSet(viewsets.ModelViewSet):
@@ -67,116 +69,248 @@ class PostViewSet(viewsets.ModelViewSet):
             "data": serializer.data
         }, status=status.HTTP_201_CREATED, headers=headers)
 
+    def _calculate_post_score(self, post, user, time_decay_hours=24):
+        """
+        Calculate engagement score for a post with time decay and personalization
+        Score = (likes * 1 + comments * 2 + shares * 3) * time_decay * personalization_boost
+        """
+        # Base engagement
+        engagement = (
+            post.likes.count() * 1 + 
+            post.comments.count() * 2 + 
+            post.shares.count() * 3
+        )
+        
+        # Time decay: newer posts get higher scores
+        hours_old = (timezone.now() - post.created_at).total_seconds() / 3600
+        time_decay = max(0.1, 1 - (hours_old / time_decay_hours))
+        
+        # Personalization boost
+        personalization = 1.0
+        
+        # Boost if from followed user
+        if Follow.objects.filter(follower=user, following=post.user).exists():
+            personalization *= 2.0
+        
+        # Boost if from joined community
+        if post.community:
+            if CommunityMember.objects.filter(user=user, community=post.community, is_approved=True).exists():
+                personalization *= 1.5
+        
+        # Boost if user has interacted with similar content
+        if Like.objects.filter(user=user, post__user=post.user).exists():
+            personalization *= 1.3
+        
+        # Pinned posts get extra boost
+        if post.is_pinned:
+            personalization *= 3.0
+        
+        return engagement * time_decay * personalization
+
     @action(detail=False, methods=['get'])
     def news_feed(self, request):
         """
-        Enhanced news feed showing:
-        1. Posts from followed users (personal posts)
-        2. Posts from joined communities
-        3. Top engaged posts from popular communities (for discovery)
-        4. Top engaged posts from non-followed users
+        Facebook-like news feed algorithm with randomization on each refresh:
         
-        Priority: Unseen followed content > Community content > Discovery content
+        Strategy:
+        1. Collect diverse post pools (followed, community, discovery)
+        2. Score all posts with engagement + time decay + personalization
+        3. Apply diversity sampling (not all top posts, mix high/medium/low scores)
+        4. Randomize within score tiers for variety on refresh
+        5. Track views to reduce repetition
+        
+        Feed composition per refresh:
+        - 40% High engagement posts (from all sources)
+        - 30% Medium engagement posts (for discovery)
+        - 20% Fresh/new posts (time-based)
+        - 10% Random picks (serendipity)
         """
         user = request.user
         
-        # Get users that current user follows
-        following_ids = Follow.objects.filter(follower=user).values_list('following_id', flat=True)
-        
-        # Get communities user is member of
-        joined_community_ids = CommunityMember.objects.filter(
-            user=user,
-            is_approved=True
-        ).values_list('community_id', flat=True)
-        
-        # Get posts already viewed by user
-        viewed_post_ids = PostView.objects.filter(user=user).values_list('post_id', flat=True)
-        
-        # 1. Personal posts from followed users (unseen first)
-        followed_posts_unseen = Post.objects.filter(
-            user_id__in=following_ids,
-            status='approved',
-            community__isnull=True  # Only personal posts
-        ).exclude(
-            id__in=viewed_post_ids
-        ).select_related('user').prefetch_related(
-            'likes', 'comments', 'shares'
-        ).order_by('-created_at')
-        
-        # 2. Posts from joined communities (unseen first, pinned at top)
-        community_posts_unseen = Post.objects.filter(
-            community_id__in=joined_community_ids,
-            status='approved'
-        ).exclude(
-            id__in=viewed_post_ids
-        ).select_related('user', 'community').prefetch_related(
-            'likes', 'comments', 'shares'
-        ).order_by('-is_pinned', '-created_at')
-        
-        # 3. Top posts from popular communities (for discovery)
+        # Time windows
         recent_date = timezone.now() - timedelta(days=7)
-        popular_community_ids = Community.objects.filter(
+        fresh_date = timezone.now() - timedelta(hours=24)
+        
+        # Get user's social graph (convert to list to avoid subquery issues)
+        following_ids = list(Follow.objects.filter(follower=user).values_list('following_id', flat=True))
+        joined_community_ids = list(CommunityMember.objects.filter(
+            user=user, is_approved=True
+        ).values_list('community_id', flat=True))
+        
+        # Get recently viewed posts
+        recent_views_date = timezone.now() - timedelta(hours=12)
+        recently_viewed_ids = list(PostView.objects.filter(
+            user=user,
+            viewed_at__gte=recent_views_date
+        ).values_list('post_id', flat=True))
+        
+        # Get public community IDs separately to avoid LIMIT in subquery
+        public_community_query = Community.objects.filter(
             visibility='public'
         ).exclude(
             id__in=joined_community_ids
-        ).order_by('-members_count')[:20].values_list('id', flat=True)
+        ).order_by('-members_count')
         
-        popular_community_posts = Post.objects.filter(
-            community_id__in=popular_community_ids,
+        # Convert to list with slice to avoid subquery LIMIT issue
+        public_community_ids = list(public_community_query.values_list('id', flat=True)[:50])
+        
+        # Base queryset - all approved posts from last 30 days
+        base_posts = Post.objects.filter(
             status='approved',
-            created_at__gte=recent_date
-        ).exclude(
-            id__in=viewed_post_ids
-        ).annotate(
-            engagement=Count('likes') + Count('comments') * 2 + Count('shares') * 3
+            created_at__gte=timezone.now() - timedelta(days=30)
         ).select_related('user', 'community').prefetch_related(
             'likes', 'comments', 'shares'
-        ).order_by('-engagement', '-created_at')
+        )
         
-        # 4. Top engaged personal posts from non-followed users
-        top_personal_posts = Post.objects.filter(
-            status='approved',
+        # POOL 1: Posts from followed users (personal posts)
+        followed_posts = base_posts.filter(
+            user_id__in=following_ids,
+            community__isnull=True
+        ) if following_ids else Post.objects.none()
+        
+        # POOL 2: Posts from joined communities
+        community_posts = base_posts.filter(
+            community_id__in=joined_community_ids
+        ) if joined_community_ids else Post.objects.none()
+        
+        # POOL 3: High engagement posts from public communities (discovery)
+        discovery_community_posts = base_posts.filter(
+            community_id__in=public_community_ids,
+            created_at__gte=recent_date
+        ).annotate(
+            engagement_score=Count('likes') + Count('comments') * 2 + Count('shares') * 3
+        ).filter(engagement_score__gte=5) if public_community_ids else Post.objects.none()
+        
+        # POOL 4: Trending personal posts from non-followed users (discovery)
+        discovery_personal_posts = base_posts.filter(
             community__isnull=True,
             created_at__gte=recent_date
         ).exclude(
-            user_id__in=following_ids
-        ).exclude(
             user=user
-        ).exclude(
-            id__in=viewed_post_ids
         ).annotate(
-            engagement=Count('likes') + Count('comments') * 2 + Count('shares') * 3
-        ).select_related('user').prefetch_related(
-            'likes', 'comments', 'shares'
-        ).order_by('-engagement', '-created_at')
+            engagement_score=Count('likes') + Count('comments') * 2 + Count('shares') * 3
+        ).filter(engagement_score__gte=10)
         
-        # 5. Seen posts from followed users and communities (lower priority)
-        followed_posts_seen = Post.objects.filter(
-            Q(user_id__in=following_ids, community__isnull=True) |
-            Q(community_id__in=joined_community_ids),
-            status='approved',
-            id__in=viewed_post_ids
-        ).select_related('user', 'community').prefetch_related(
-            'likes', 'comments', 'shares'
-        ).order_by('-created_at')
+        # Exclude followed users if we have any
+        if following_ids:
+            discovery_personal_posts = discovery_personal_posts.exclude(user_id__in=following_ids)
         
-        # Combine in priority order
-        followed_unseen_list = list(followed_posts_unseen[:15])
-        community_unseen_list = list(community_posts_unseen[:15])
-        popular_community_list = list(popular_community_posts[:10])
-        top_personal_list = list(top_personal_posts[:10])
-        followed_seen_list = list(followed_posts_seen[:10])
-        
-        combined_posts = (
-            followed_unseen_list + 
-            community_unseen_list + 
-            popular_community_list + 
-            top_personal_list + 
-            followed_seen_list
+        # POOL 5: Fresh posts (last 24 hours) - for timeliness
+        fresh_posts = base_posts.filter(
+            created_at__gte=fresh_date
         )
         
-        # Paginate the combined results
-        page = self.paginate_queryset(combined_posts)
+        # Exclude recently viewed if we have any
+        if recently_viewed_ids:
+            fresh_posts = fresh_posts.exclude(id__in=recently_viewed_ids)
+        
+        # Annotate all querysets with engagement score
+        followed_posts = followed_posts.annotate(
+            engagement_score=Count('likes') + Count('comments') * 2 + Count('shares') * 3
+        )
+        community_posts = community_posts.annotate(
+            engagement_score=Count('likes') + Count('comments') * 2 + Count('shares') * 3
+        )
+        fresh_posts = fresh_posts.annotate(
+            engagement_score=Count('likes') + Count('comments') * 2 + Count('shares') * 3
+        )
+        
+        # Combine all pools - execute queries and convert to lists
+        all_candidate_posts = (
+            list(followed_posts) + 
+            list(community_posts) + 
+            list(discovery_community_posts) + 
+            list(discovery_personal_posts) +
+            list(fresh_posts)
+        )
+        
+        # Remove duplicates by post ID
+        seen_ids = set()
+        unique_posts = []
+        for post in all_candidate_posts:
+            if post.id not in seen_ids:
+                seen_ids.add(post.id)
+                unique_posts.append(post)
+        
+        # Calculate personalized scores for all posts
+        scored_posts = []
+        for post in unique_posts:
+            score = self._calculate_post_score(post, user)
+            scored_posts.append((post, score))
+        
+        # Sort by score
+        scored_posts.sort(key=lambda x: x[1], reverse=True)
+        
+        # DIVERSITY SAMPLING: Split into score tiers
+        total_posts = len(scored_posts)
+        if total_posts == 0:
+            return Response({
+                "success": True,
+                "message": "News feed retrieved successfully",
+                "data": []
+            })
+        
+        # Define tier boundaries
+        high_tier_end = max(1, int(total_posts * 0.3))
+        medium_tier_end = max(high_tier_end + 1, int(total_posts * 0.6))
+        
+        high_engagement = scored_posts[:high_tier_end]
+        medium_engagement = scored_posts[high_tier_end:medium_tier_end]
+        low_engagement = scored_posts[medium_tier_end:]
+        
+        # Sample from each tier with randomization
+        feed_size = 50  # Target feed size
+        
+        # Allocate posts per tier (with variation)
+        high_count = min(len(high_engagement), int(feed_size * 0.4))
+        medium_count = min(len(medium_engagement), int(feed_size * 0.3))
+        fresh_count = min(len(low_engagement), int(feed_size * 0.2))
+        random_count = min(total_posts, int(feed_size * 0.1))
+        
+        # Random sampling within each tier (KEY FOR REFRESH VARIATION)
+        selected_posts = []
+        
+        # High engagement (but randomized selection)
+        if high_engagement:
+            selected_high = random.sample(high_engagement, min(high_count, len(high_engagement)))
+            selected_posts.extend([post for post, score in selected_high])
+        
+        # Medium engagement
+        if medium_engagement:
+            selected_medium = random.sample(medium_engagement, min(medium_count, len(medium_engagement)))
+            selected_posts.extend([post for post, score in selected_medium])
+        
+        # Fresh/Low engagement
+        if low_engagement:
+            selected_fresh = random.sample(low_engagement, min(fresh_count, len(low_engagement)))
+            selected_posts.extend([post for post, score in selected_fresh])
+        
+        # Random serendipity picks
+        remaining_posts = [p for p, s in scored_posts if p not in selected_posts]
+        if remaining_posts:
+            random_picks = random.sample(remaining_posts, min(random_count, len(remaining_posts)))
+            selected_posts.extend(random_picks)
+        
+        # Shuffle the final selection for unpredictability
+        random.shuffle(selected_posts)
+        
+        # Ensure pinned posts from joined communities appear at top
+        pinned_posts = [p for p in selected_posts if p.is_pinned and p.community_id in joined_community_ids]
+        non_pinned = [p for p in selected_posts if not (p.is_pinned and p.community_id in joined_community_ids)]
+        
+        final_feed = pinned_posts + non_pinned
+        
+        # Record views for the posts being shown
+        views_to_create = [
+            PostView(user=user, post=post)
+            for post in final_feed[:20]  # Record views for first 20 posts
+            if not PostView.objects.filter(user=user, post=post).exists()
+        ]
+        if views_to_create:
+            PostView.objects.bulk_create(views_to_create, ignore_conflicts=True)
+        
+        # Paginate
+        page = self.paginate_queryset(final_feed)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response({
@@ -185,7 +319,7 @@ class PostViewSet(viewsets.ModelViewSet):
                 "data": serializer.data
             })
         
-        serializer = self.get_serializer(combined_posts, many=True)
+        serializer = self.get_serializer(final_feed, many=True)
         return Response({
             "success": True,
             "message": "News feed retrieved successfully",
@@ -383,7 +517,7 @@ class PostViewSet(viewsets.ModelViewSet):
             "message": "User posts retrieved successfully",
             "data": serializer.data
         })
-
+        
 class LikeViewSet(viewsets.ModelViewSet):
     """ Viewset for Like """
     queryset = Like.objects.all()
