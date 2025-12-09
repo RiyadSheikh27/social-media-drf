@@ -13,13 +13,15 @@ from rest_framework import parsers
 from community.models import *
 from community.serializers import *
 import random
+from .moderation import moderate_post
+from rest_framework import serializers 
 
 User = get_user_model()
 
 
 """ Viewset for Posts """
 class PostViewSet(viewsets.ModelViewSet):
-    """Enhanced PostViewSet with community integration"""
+    """Enhanced PostViewSet with community integration and content moderation"""
     queryset = Post.objects.all().order_by('-created_at')
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -28,7 +30,6 @@ class PostViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if self.action == 'list':
-            # Show approved posts (both personal and community)
             return Post.objects.filter(status='approved').order_by('-created_at')
         else:
             return Post.objects.filter(
@@ -36,8 +37,16 @@ class PostViewSet(viewsets.ModelViewSet):
             ).order_by('-created_at')
 
     def perform_create(self, serializer):
-        """Create post with community validation"""
+        """Create post with community validation and content moderation"""
         community = serializer.validated_data.get('community')
+        
+        # CONTENT MODERATION
+        title = serializer.validated_data.get('title', '')
+        content = serializer.validated_data.get('content', '')
+        media_files = serializer.validated_data.get('media_files', [])
+        
+        # Check content for inappropriate material
+        is_approved, rejection_reason = moderate_post(title, content, media_files)
         
         # If posting to a community, verify membership
         if community:
@@ -50,13 +59,27 @@ class PostViewSet(viewsets.ModelViewSet):
             if not membership:
                 raise PermissionDenied("You must be a member to post in this community.")
             
-            # Check if community requires approval for posts
-            if community.visibility == 'private':
+            # Determine post status based on moderation and community settings
+            if not is_approved:
+                # Auto-reject if moderation fails
+                serializer.save(user=self.request.user, status='rejected')
+                raise serializers.ValidationError({
+                    "content_moderation": rejection_reason
+                })
+            elif community.visibility == 'private':
                 serializer.save(user=self.request.user, status='pending')
             else:
                 serializer.save(user=self.request.user)
         else:
-            serializer.save(user=self.request.user)
+            # Personal post - apply moderation
+            if not is_approved:
+                serializer.save(user=self.request.user, status='rejected')
+                raise serializers.ValidationError({
+                    "content_moderation": rejection_reason
+                })
+            else:
+                serializer.save(user=self.request.user)
+
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
